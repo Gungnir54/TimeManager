@@ -153,7 +153,6 @@ defmodule TimeManager.Teams do
     end
   end
 
-
   def remove_user_from_team(%User{} = user, %Team{} = team) do
     case Repo.get_by(TimeManager.TeamsUsers, user_id: user.id, team_id: team.id) do
       nil ->
