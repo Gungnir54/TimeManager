@@ -1,0 +1,107 @@
+name: CI/CD Pipeline for TimeManager project
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  push:
+    branches:
+      - '*'
+
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.14.0'
+          otp-version: '25.0'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Elixir dependencies
+        run: |
+          cd TimeManagerProject
+          mix local.hex --force
+          mix deps.get
+
+      - name: Run Credo Linter for backend
+        run: |
+          cd TimeManagerProject
+          mix credo --min-priority=1 || true
+
+      - name: Run Elixir tests
+        run: |
+          cd TimeManagerProject
+          mix test || true
+
+      - name: Install Node.js dependencies
+        run: |
+          cd TimeManagerInterface
+          npm ci
+
+      - name: Lint Vue.js code
+        run: |
+          cd TimeManagerInterface
+          npm run lint || true
+
+  build:
+    needs: dev
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Convert repo name to lowercase
+        id: repo_name
+        run: echo "::set-output name=lower::$(echo '${{ github.repository }}' | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Debug
+        run: |
+          echo "DOCKERHUB_USERNAME is set: ${{ secrets.DOCKERHUB_USERNAME != '' }}"
+          echo "DOCKERHUB_PASSWORD is set: ${{ secrets.DOCKERHUB_PASSWORD != '' }}"
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push API Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./TimeManagerProject
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/timemanager-api:latest
+
+      - name: Build and push Client Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./TimeManagerInterface
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/timemanager-client:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to production
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d
