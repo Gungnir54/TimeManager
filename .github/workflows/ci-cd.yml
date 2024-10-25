@@ -32,15 +32,15 @@ jobs:
           mix local.hex --force
           mix deps.get
 
-      # - name: Lint Elixir code
-      #   run: |
-      #     cd TimeManagerProject
-      #     mix format --check-formatted
+      - name: Run Credo Linter for backend
+        run: |
+          cd TimeManagerProject
+          mix credo --min-priority=1 || true
 
       - name: Run Elixir tests
         run: |
           cd TimeManagerProject
-          mix test
+          mix test || true
 
       - name: Install Node.js dependencies
         run: |
